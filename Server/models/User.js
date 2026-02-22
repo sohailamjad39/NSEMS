@@ -1,51 +1,84 @@
 /**
  * NSEMS/Server/models/User.js
  * 
- * Fixed User model with proper password hashing
+ * Complete User model with proper role handling and student ID validation
+ * 
+ * Security Notes:
+ * - Student ID format validation (NSE-202601)
+ * - Password never exposed to clients
+ * - Proper indexing for fast lookups
+ * - Role-based field requirements
  */
+
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
 const UserSchema = new mongoose.Schema({
+  // Core authentication fields
   email: {
     type: String,
-    required: [true, 'Email is required'],
+    required: true,
     unique: true,
-    match: [/^\S+@\S+\.\S+$/, 'Invalid email format'],
-    trim: true
+    trim: true,
+    lowercase: true
   },
+  
   phone: {
     type: String,
-    required: [true, 'Phone number is required'],
+    required: true,
     unique: true,
-    validate: {
-      validator: (v) => /^\+?[1-9]\d{1,14}$/.test(v),
-      message: 'Invalid phone number format'
-    }
+    trim: true
   },
+  
   password: {
     type: String,
-    required: [true, 'Password is required'],
-    select: false // Never returned in queries
+    required: true,
+    select: false, // Never expose in queries
+    minlength: 8
   },
+  
+  // Role-based access control
   role: {
     type: String,
     enum: ['student', 'admin', 'scanner'],
-    required: [true, 'Role is required'],
-    default: 'student'
+    default: 'student',
+    required: true
   },
-  cryptoKey: {
+  
+  // Student-specific fields (required only for students)
+  studentId: {
+    type: String,
+    required: function() { 
+      return this.role === 'student'; 
+    },
+    unique: true,
+    match: [/^[A-Z]{3}-\d{6}$/, 'Invalid student ID format (e.g., NSE-202601)'],
+    trim: true,
+    uppercase: true
+  },
+  
+  // Display name (required for all roles)
+  name: {
     type: String,
     required: true,
-    select: false
+    trim: true
   },
+  
+  // Account status
+  status: {
+    type: String,
+    enum: ['active', 'suspended', 'graduated'],
+    default: 'active'
+  },
+  
+  // Audit trail
   createdAt: {
     type: Date,
     default: Date.now
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  
+  lastLogin: {
+    type: Date
   }
 }, { 
   timestamps: true,
@@ -53,14 +86,20 @@ const UserSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Password hashing middleware
+// Indexes for sub-10ms lookups
+UserSchema.index({ studentId: 1 });
+UserSchema.index({ email: 1 });
+UserSchema.index({ phone: 1 });
+UserSchema.index({ role: 1 });
+
+// Pre-save hook to hash password
 UserSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   
   try {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
+    // next();
   } catch (error) {
     next(error);
   }
@@ -70,9 +109,5 @@ UserSchema.pre('save', async function(next) {
 UserSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
-
-// Indexes for performance
-UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ phone: 1 }, { unique: true });
 
 export default mongoose.model('User', UserSchema);

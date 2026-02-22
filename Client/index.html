@@ -4,10 +4,42 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <title>NSEMS - Digital Student ID System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      /* Fallback styles while React loads */
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #f0f9f1, #e6f7ee);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #root {
+        width: 100%;
+        min-height: 100vh;
+      }
+      .loading-fallback {
+        text-align: center;
+        color: #1a2e2a;
+        font-family: 'Lexend', sans-serif;
+      }
+      .loading-fallback h1 {
+        font-size: 24px;
+        margin-bottom: 16px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="loading-fallback">
+        <h1>Loading NSEMS System...</h1>
+        <p>Please wait while the application initializes</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

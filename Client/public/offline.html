@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NSEMS - Offline Mode</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Lexend', sans-serif;
+      background: linear-gradient(135deg, #f0f9f1, #e6f7ee);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .offline-container {
+      text-align: center;
+      max-width: 500px;
+      padding: 2rem;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 25px 50px -12px rgba(63, 95, 88, 0.15);
+    }
+    
+    .offline-icon {
+      width: 80px;
+      height: 80px;
+      background: #f8fbf9;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+    }
+    
+    .offline-icon svg {
+      width: 40px;
+      height: 40px;
+      color: #ef4444;
+    }
+    
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1a2e2a;
+      margin-bottom: 1rem;
+    }
+    
+    p {
+      color: #4a6a65;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #fef2f2;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #dc2626;
+    }
+    
+    .status-indicator .dot {
+      width: 8px;
+      height: 8px;
+      background: #dc2626;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+  <div class="offline-container">
+    <div class="offline-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+      </svg>
+    </div>
+    <h1>Offline Mode Active</h1>
+    <p>Your NSEMS application is running in offline mode. All core features are available without internet connection.</p>
+    <div class="status-indicator">
+      <span class="dot"></span>
+      <span>Working Offline</span>
+    </div>
+  </div>
+</body>
+</html>

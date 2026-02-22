@@ -1,150 +1,142 @@
-/**
- * Client/src/services/auth.js
- * 
- * Offline-capable authentication service (2026)
- * 
- * FIXED: All dependencies now included
- */
-import { Role } from '../shared/types';
+// Client/src/services/auth.js
+import { offlineService } from './offlineService';
 
-export const login = async (identifier, password) => {
+export const getToken = () => localStorage.getItem('authToken');
+export const setToken = (token) => localStorage.setItem('authToken', token);
+
+export const removeToken = () => {
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('studentId');
+  localStorage.removeItem('studentName');
+  localStorage.removeItem('role');
+  localStorage.removeItem('adminName');
+  localStorage.removeItem('studentSecretKey');
+};
+
+export const getStudentId = () => localStorage.getItem('studentId');
+export const getStudentName = () => localStorage.getItem('studentName');
+
+export const isAuthenticated = () => {
+  const token = getToken();
+  if (!token) return false;
+  
   try {
-    // 1. Check for cached credentials (offline mode)
-    const cachedToken = localStorage.getItem('authToken');
-    if (cachedToken) {
-      return validateCachedToken(cachedToken);
-    }
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const currentTime = Math.floor(Date.now() / 1000);
+    return payload.exp > currentTime;
+  } catch {
+    return false;
+  }
+};
 
-    // 2. Online authentication (only if no cache)
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier, password }),
-      cache: 'no-store'
-    });
+export const getRole = () => {
+  const storedRole = localStorage.getItem('role');
+  if (storedRole) return storedRole;
+  
+  const token = getToken();
+  if (!token) return null;
+  
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.role || null;
+  } catch {
+    return null;
+  }
+};
 
-    if (!response.ok) {
-      throw new Error('Invalid credentials');
-    }
+/**
+ * Enhanced login function with automatic caching
+ */
+export const login = async (identifier, password) => {
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier, password })
+  });
 
-    const { role, token } = await response.json();
+  if (!response.ok) {
+    const errData = await response.json();
+    throw new Error(errData.message || 'Invalid credentials');
+  }
+
+  const data = await response.json();
+
+  // Store token and user info immediately
+  setToken(data.token);
+  
+  if (data.role === 'student') {
+    localStorage.setItem('studentId', data.studentId);
+    localStorage.setItem('studentName', data.name);
+    localStorage.setItem('role', 'student');
     
-    // 3. Store token securely (Web Crypto API)
-    await storeToken(token);
+    if (data.secretKey) {
+      localStorage.setItem('studentSecretKey', data.secretKey);
+    }
+  } else if (data.role === 'admin' || data.role === 'scanner') {
+    localStorage.setItem('role', data.role);
+    localStorage.setItem('adminName', data.name);
+  }
+
+  await offlineService.storeLoginData(data);
+  
+  if (data.role === 'admin' || data.role === 'scanner') {
+    await offlineService.storeAdminData(data);
+  }
+
+  return { 
+    role: data.role, 
+    token: data.token,
+    studentId: data.studentId,
+    name: data.name
+  };
+};
+
+/**
+ * Cache login data immediately after successful login
+ */
+const cacheLoginData = async (loginData) => {
+  try {
+    // Store in IndexedDB for offline access
+    await offlineService.storeLoginData(loginData);
     
-    // 4. Cache student secret key for offline use
-    if (role === Role.STUDENT) {
-      await cacheStudentSecretKey();
+    // If student, also store student data
+    if (loginData.role === 'student') {
+      await offlineService.storeStudentData({
+        studentId: loginData.studentId,
+        name: loginData.name,
+        secretKey: loginData.secretKey,
+        program: 'Software Engineering',
+        department: 'Computer Science',
+        year: 3,
+        status: 'active'
+      });
     }
     
-    return { role, token };
+    // ✅ Force cache the current page for offline access
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        // Cache the current page
+        const url = window.location.href;
+        registration.active.postMessage({
+          action: 'CACHE_PAGE',
+          url: url
+        });
+        
+        // Cache critical assets
+        registration.active.postMessage({
+          action: 'CACHE_ASSETS',
+          assets: [
+            '/index.html',
+            '/src/App.css',
+            '/src/main.jsx',
+            '/src/App.jsx'
+          ]
+        });
+      });
+    }
+    
+    console.log('✅ Login data cached successfully');
   } catch (error) {
-    // Fallback to offline mode if internet fails
-    return handleOfflineLogin(identifier, password);
+    console.error('Failed to cache login ', error);
   }
-};
-
-// Validate cached token (offline)
-const validateCachedToken = async (cachedToken) => {
-  const token = await window.crypto.subtle.importKey(
-    'jwk',
-    JSON.parse(cachedToken),
-    { name: 'HMAC', hash: 'SHA-256' },
-    true,
-    ['verify']
-  );
-  
-  // Time-bound validation (60s rotation)
-  const currentTimeWindow = Math.floor(Date.now() / 60_000);
-  const isValid = await window.crypto.subtle.verify(
-    'HMAC',
-    token,
-    new TextEncoder().encode(String(currentTimeWindow))
-  );
-  
-  if (!isValid) throw new Error('Session expired');
-  return { role: 'student', token }; // Role determined from cache
-};
-
-// Store token securely (2026 standard)
-const storeToken = async (token) => {
-  const jwk = await window.crypto.subtle.exportKey('jwk', token);
-  localStorage.setItem('authToken', JSON.stringify(jwk));
-};
-
-// Cache student secret key for offline use
-const cacheStudentSecretKey = async () => {
-  const response = await fetch('/api/student/secret', {
-    cache: 'force-cache'
-  });
-  const { secretKey } = await response.json();
-  
-  // Encrypt and store in IndexedDB
-  const encryptedKey = await encryptSecret(secretKey);
-  await saveToIndexedDB('studentSecret', encryptedKey);
-};
-
-// Handle offline login (2026)
-const handleOfflineLogin = async (identifier, password) => {
-  // 1. Verify against local cache
-  const user = await getUserFromCache(identifier);
-  if (!user || !(await verifyPassword(password, user.password))) {
-    throw new Error('Invalid credentials');
-  }
-  
-  // 2. Validate time-bound token
-  const currentTimeWindow = Math.floor(Date.now() / 60_000);
-  if (user.expiry < currentTimeWindow) {
-    throw new Error('Session expired');
-  }
-  
-  return { role: user.role, token: user.token };
-};
-
-// Helper functions (simplified for this example)
-const encryptSecret = async (secret) => {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    true,
-    ['encrypt', 'decrypt']
-  );
-  
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    new TextEncoder().encode(secret)
-  );
-  
-  return {
-    ciphertext: Array.from(new Uint8Array(ciphertext)),
-    iv: Array.from(iv),
-    key: await crypto.subtle.exportKey('jwk', key)
-  };
-};
-
-const saveToIndexedDB = async (key, value) => {
-  const db = await openDB('NSEMS', 1, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains('secrets')) {
-        db.createObjectStore('secrets', { keyPath: 'id' });
-      }
-    }
-  });
-  
-  await db.put('secrets', { id: key, value });
-};
-
-const getUserFromCache = async (identifier) => {
-  // Simplified implementation
-  return {
-    role: 'student',
-    password: 'hashed_password',
-    expiry: Math.floor(Date.now() / 60_000)
-  };
-};
-
-const verifyPassword = async (password, storedHash) => {
-  // Simplified implementation
-  return true;
 };

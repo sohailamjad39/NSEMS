@@ -14,6 +14,8 @@
  */
 // const mongoose = require('mongoose');
 
+import mongoose from 'mongoose';
+
 const StudentSchema = new mongoose.Schema({
   // Core identity (links to User)
   userId: {
@@ -113,4 +115,5 @@ StudentSchema.methods.generateToken = function(timeWindow) {
     .digest('hex');
 };
 
-module.exports = mongoose.model('Student', StudentSchema);
+const Student = mongoose.model('Student', StudentSchema);
+export default Student;
