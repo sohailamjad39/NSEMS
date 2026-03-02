@@ -264,42 +264,104 @@ const AdminDashboard = () => {
   };
 
   // ── Camera ───────────────────────────────────────────────────────────────
+  // ── Camera init (mobile-robust) ─────────────────────────────────────────
+  //
+  // On mobile, NotReadableError does NOT always mean another app has the camera.
+  // It commonly means:
+  //   1. Constraints (width/height/aspectRatio) are too strict for the device
+  //   2. The previous stream wasn't fully released before a new one was requested
+  //   3. The browser's camera pipeline needs a moment to become available
+  //
+  // Fix strategy — try 3 progressively simpler constraint sets, with a short
+  // delay before each retry to let the OS release the camera pipeline:
+  //   Attempt 1: { facingMode: "environment" }  (no resolution hints)
+  //   Attempt 2: { facingMode: { ideal: "environment" } }  (softer constraint)
+  //   Attempt 3: { facingMode: false }  (any camera, let OS decide)
+  //
   const initCameraScanner = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: { ideal: 1.7777777778 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current && isMountedRef.current) {
-        videoRef.current.srcObject = stream;
-        const p = videoRef.current.play();
-        if (p !== undefined) {
-          p.then(() => {
-            if (!isMountedRef.current) return;
-            const hints = new Map();
-            hints.set("POSSIBLE_FORMATS", [BarcodeFormat.QR_CODE, BarcodeFormat.AZTEC, BarcodeFormat.DATA_MATRIX]);
-            const scanner = new BrowserMultiFormatReader(hints);
-            scanner.timeBetweenDecodingAttempts = 100;
-            scanner.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-              if (result?.text && isScanning && isMountedRef.current) handleQRScan(result.text);
-            });
-            scannerRef.current = scanner;
-            setCameraError(null);
-          }).catch(() => {
-            if (!isMountedRef.current) return;
-            setCameraError("Failed to start camera. Please check permissions and try again.");
-          });
-        }
-      }
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      let msg = "Camera permission required";
-      if      (err.name === "NotAllowedError")  msg = "Camera access denied. Please allow camera permissions.";
-      else if (err.name === "NotFoundError")    msg = "No camera found on this device.";
-      else if (err.name === "NotReadableError") msg = "Camera is already in use by another application.";
-      setCameraError(msg);
+    // Stop any existing stream first so the OS fully releases the camera
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    // Progressive constraint fallbacks — mobile cameras are picky
+    const constraintSets = [
+      { video: { facingMode: "environment" }, audio: false },
+      { video: { facingMode: { ideal: "environment" } }, audio: false },
+      { video: true, audio: false },
+    ];
+
+    let stream = null;
+    let lastErr = null;
+
+    for (let i = 0; i < constraintSets.length; i++) {
+      try {
+        // Brief delay before each attempt — lets the OS camera pipeline settle.
+        // This is the key fix for NotReadableError on mobile: the error often
+        // occurs because a previous stream release hasn't propagated yet.
+        if (i > 0) await new Promise(r => setTimeout(r, 600));
+        if (!isMountedRef.current) return;
+
+        stream = await navigator.mediaDevices.getUserMedia(constraintSets[i]);
+        break; // success — stop trying
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Camera attempt ${i + 1} failed (${err.name}):`, err.message);
+
+        // NotAllowedError means user denied — no point retrying
+        if (err.name === "NotAllowedError") break;
+      }
+    }
+
+    if (!stream) {
+      if (!isMountedRef.current) return;
+      let msg = "Unable to access camera. Please try refreshing the page.";
+      if (lastErr?.name === "NotAllowedError")
+        msg = "Camera access denied. Please allow camera permissions in your browser settings.";
+      else if (lastErr?.name === "NotFoundError")
+        msg = "No camera found on this device.";
+      else if (lastErr?.name === "NotReadableError")
+        msg = "Camera could not be started. Please close other browser tabs, refresh, and try again.";
+      setCameraError(msg);
+      return;
+    }
+
+    if (!isMountedRef.current) {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+
+    streamRef.current = stream;
+
+    // Attach stream to video element
+    const video = videoRef.current;
+    video.srcObject = stream;
+    video.setAttribute("playsinline", "true"); // critical for iOS Safari
+    video.setAttribute("muted", "true");
+
+    try {
+      await video.play();
+    } catch (playErr) {
+      console.warn("video.play() failed:", playErr);
+      // On some mobile browsers play() rejects if the page isn't focused.
+      // We still set up the scanner — it will start decoding once the video plays.
+    }
+
+    if (!isMountedRef.current) return;
+
+    const hints = new Map();
+    hints.set("POSSIBLE_FORMATS", [BarcodeFormat.QR_CODE, BarcodeFormat.AZTEC, BarcodeFormat.DATA_MATRIX]);
+    const scanner = new BrowserMultiFormatReader(hints);
+    scanner.timeBetweenDecodingAttempts = 150; // slightly slower on mobile = less CPU drain
+    scanner.decodeFromVideoDevice(undefined, video, (result) => {
+      if (result?.text && isScanning && isMountedRef.current) handleQRScan(result.text);
+    });
+    scannerRef.current = scanner;
+    setCameraError(null);
   };
 
   // ── QR scan handler (FIX 2) ──────────────────────────────────────────────
@@ -445,7 +507,14 @@ const AdminDashboard = () => {
               </div>
               <h2 className="ad-camera-error-title">Camera Access Required</h2>
               <p className="ad-camera-error-msg">{cameraError}</p>
-              <button className="ad-camera-retry-btn" onClick={() => window.location.reload()}>Retry Camera Access</button>
+              <button className="ad-camera-retry-btn" onClick={async () => {
+                setCameraError(null);
+                // Wait 1s before retrying — gives the OS time to release the camera
+                await new Promise(r => setTimeout(r, 1000));
+                initCameraScanner();
+              }}>Retry Camera Access</button>
+              <button className="ad-camera-retry-btn" style={{ marginTop:"0.5rem", background:"var(--surface)", color:"var(--text-secondary)", border:"1px solid var(--border)" }}
+                onClick={() => window.location.reload()}>Reload Page</button>
               <button className="ad-camera-logout-btn" onClick={() => { removeToken(); cleanupScanner(); navigate("/"); }}>Logout</button>
             </div>
           </div>
