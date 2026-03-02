@@ -1,9 +1,9 @@
 // src/config/api.js
 
-// If we are in production, use the full URL. 
-// If in dev, use empty string to let Vite Proxy handle it.
-const API_BASE = import.meta.env.PROD 
-  ? 'http://localhost:5000' 
-  : ''; 
+// In development: empty string so Vite's proxy handles requests (vite.config.js)
+// In production:  reads VITE_API_BASE_URL from Vercel environment variables
+const API_BASE = import.meta.env.PROD
+  ? import.meta.env.VITE_API_BASE_URL
+  : '';
 
 export default API_BASE;
