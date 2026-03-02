@@ -1,113 +1,114 @@
 /**
  * Client/src/App.jsx
  *
- * Main application component with routing and authentication
+ * REPLACE your entire existing App.jsx with this file.
  *
- * CRITICAL FIXES:
- * - React Router v7 requires different syntax
- * - Fixed authentication redirect logic
- * - Added proper route protection
- * - Added console logging for debugging
+ * Changes:
+ *  — AuthRoute wraps login: redirects already-logged-in users to their dashboard
+ *  — ProtectedRoute wraps every protected page
+ *  — All new admin pages added with their routes
+ *  — Student change-password wired through ChangePasswordModal
  */
 
-import React, { useEffect } from "react";
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate,
-  useLocation,
-} from "react-router-dom";
-import Login from "./pages/Login";
-import StudentDashboard from "./pages/StudentDashboard";
-import AdminDashboard from "./pages/AdminDashboard";
-import ProtectedRoute from "./components/ProtectedRoute";
+import React from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+
+// Route guards
+import { ProtectedRoute, AuthRoute } from "./components/ProtectedRoute";
+
+// Public
+import Login from "./pages/Login";           // your existing Login page
+
+// Admin pages
+import AdminDashboard  from "./pages/AdminDashboard";
 import RegisterStudent from "./pages/RegisterStudent";
-import "./App.css";
+import AllStudents     from "./pages/AllStudents";
+import ScanLogs        from "./pages/ScanLogs";
+import ManageAdmins    from "./pages/ManageAdmins";
+import AdminSettings   from "./pages/AdminSettings";
 
-// Debug component to see route changes
-const RouteDebugger = () => {
-  const location = useLocation();
+// Student page — adjust import path to match yours
+import StudentDashboard from "./pages/StudentDashboard"; // your existing student page
 
-  useEffect(() => {
-    console.log("📍 Route changed:", location.pathname);
-    console.log("   Search:", location.search);
-    console.log("   State:", location.state);
-  }, [location]);
-
-  return null;
-};
-
-// Root redirect logic
-const RootRedirect = () => {
-  const token = localStorage.getItem("authToken");
-  const role =
-    localStorage.getItem("role") ||
-    (localStorage.getItem("studentId") ? "student" : null);
-
-  console.log("🔄 Root redirect check:");
-  console.log("   Token exists:", !!token);
-  console.log("   Role detected:", role);
-
-  if (token) {
-    if (role === "student") {
-      console.log("   ➡️  Redirecting to /student-id");
-      return <Navigate to="/student-id" replace />;
-    } else if (role === "admin" || role === "scanner") {
-      console.log("   ➡️  Redirecting to /admin-dashboard");
-      return <Navigate to="/admin-dashboard" replace />;
-    }
-  }
-
-  console.log("   ➡️  Redirecting to /login");
-  return <Navigate to="/login" replace />;
-};
-
-function App() {
+const App = () => {
   return (
-    <BrowserRouter>
-      <RouteDebugger />
+    <Router>
       <Routes>
-        {/* Root route - redirect based on auth state */}
-        <Route path="/" element={<RootRedirect />} />
-
-        {/* Public Login Route */}
-        <Route path="/login" element={<Login />} />
-
-        {/* Student Dashboard - Protected */}
+        {/* ── Public (redirect if already logged in) ── */}
         <Route
-          path="/student-id"
+          path="/"
           element={
-            <ProtectedRoute allowedRoles={["student"]}>
+            <AuthRoute>
+              <Login />
+            </AuthRoute>
+          }
+        />
+
+        {/* ── Admin + Scanner routes ── */}
+        <Route
+          path="/admin-dashboard"
+          element={
+            <ProtectedRoute roles={["admin", "scanner"]}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/register-student"
+          element={
+            <ProtectedRoute roles={["admin"]}>
+              <RegisterStudent />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/students"
+          element={
+            <ProtectedRoute roles={["admin"]}>
+              <AllStudents />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/scan-logs"
+          element={
+            <ProtectedRoute roles={["admin"]}>
+              <ScanLogs />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/admins"
+          element={
+            <ProtectedRoute roles={["admin"]}>
+              <ManageAdmins />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute roles={["admin", "scanner"]}>
+              <AdminSettings />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Student route ── */}
+        <Route
+          path="/student"
+          element={
+            <ProtectedRoute roles={["student"]}>
               <StudentDashboard />
             </ProtectedRoute>
           }
         />
 
-        {/* Admin Dashboard - Protected */}
-        <Route
-          path="/admin-dashboard"
-          element={
-            <ProtectedRoute allowedRoles={["admin", "scanner"]}>
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/register-student"
-          element={
-            <ProtectedRoute allowedRoles={["admin"]}>
-              <RegisterStudent />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Catch-all - Redirect to login */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* ── 404 fallback ── */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </Router>
   );
-}
+};
 
 export default App;

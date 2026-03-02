@@ -2,6 +2,7 @@
  * Client/src/pages/Login.jsx
  *
  * Login page – fixed error handling & offline-service isolation
+ * UI updated to match design image – pure CSS, no Tailwind/MUI
  */
 
 import React, { useState, useEffect } from "react";
@@ -14,7 +15,7 @@ const Login = () => {
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isHovered, setIsHovered] = useState({ id: false, password: false });
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -37,7 +38,6 @@ const Login = () => {
         body: JSON.stringify({ identifier: id, password }),
       });
     } catch (networkErr) {
-      // This ONLY fires for true network failures (server down, CORS block, DNS, etc.)
       console.error("❌ Network error:", networkErr);
       setError(
         "Cannot reach the server. Please check your connection and make sure the server is running."
@@ -88,6 +88,7 @@ const Login = () => {
         localStorage.setItem("role", "student");
         localStorage.setItem("studentId", data.studentId || "");
         localStorage.setItem("studentName", data.name || "");
+        localStorage.setItem("studentImage", data.imageLink || "");
         if (data.secretKey) {
           localStorage.setItem("studentSecretKey", data.secretKey);
         }
@@ -118,8 +119,6 @@ const Login = () => {
       }
       console.log("✅ Offline data cached successfully");
     } catch (offlineErr) {
-      // ⚠️ THIS was the silent killer – previously this threw inside the
-      //    main try/catch and surfaced as "Network error"
       console.warn("⚠️ Offline storage failed (non-fatal):", offlineErr);
     }
 
@@ -137,169 +136,144 @@ const Login = () => {
   };
 
   return (
-    <div className="login-page">
-      <div className="login-layout">
-        {/* Header */}
-        <div className="login-header">
+    <div className="lp-page">
+
+      {/* ── Page-level heading (outside card) ── */}
+      <div className="lp-page-header">
+        <h1 className="lp-page-title">NUTECH Secure Enterance Management System</h1>
+        <p className="lp-page-subtitle">
+          Secure, Offline-Capable Digital ID Verification
+        </p>
+      </div>
+
+      {/* ── Card ── */}
+      <div className="lp-card">
+
+        {/* Logo inside card, centered at top */}
+        <div className="lp-card-logo-wrap">
           <img
             src="./NUTECH_logo.png"
             alt="NUTECH Logo"
-            className="login-header__logo"
+            className="lp-card-logo"
             onError={(e) => {
               console.warn("⚠️ Logo image not found, using fallback");
               e.target.style.display = "none";
+              document.getElementById("lp-logo-fallback")?.classList.remove("lp-hidden");
             }}
           />
-          <h1 className="login-header__title">
-            Digital Student Identity System
-          </h1>
-          <p className="login-header__subtitle">
-            Secure, Offline-Capable Digital ID Verification
-          </p>
-        </div>
-
-        {/* Form */}
-        <div className="login-form">
-          <div className="login-card">
-            <h2 className="login-card__title">Login</h2>
-
-            <form onSubmit={handleLogin}>
-              {/* Identifier Field */}
-              <div
-                className={`input-group ${isHovered.id ? "input-group--hover" : ""} ${error ? "input-group--error" : ""}`}
-                onMouseEnter={() =>
-                  setIsHovered((prev) => ({ ...prev, id: true }))
-                }
-                onMouseLeave={() =>
-                  setIsHovered((prev) => ({ ...prev, id: false }))
-                }
-              >
-                <div className="input-icon">
-                  <img
-                    src="./user.png"
-                    alt="User"
-                    className="input-icon__img"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                      e.target.parentElement.innerHTML = "👤";
-                    }}
-                  />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Student ID or Admin ID"
-                  value={id}
-                  onChange={(e) => setId(e.target.value)}
-                  required
-                  onFocus={() =>
-                    setIsHovered((prev) => ({ ...prev, id: true }))
-                  }
-                  onBlur={() =>
-                    setIsHovered((prev) => ({ ...prev, id: false }))
-                  }
-                  className="input-field"
-                />
-              </div>
-
-              {/* Password Field */}
-              <div
-                className={`input-group ${isHovered.password ? "input-group--hover" : ""} ${error ? "input-group--error" : ""}`}
-                onMouseEnter={() =>
-                  setIsHovered((prev) => ({ ...prev, password: true }))
-                }
-                onMouseLeave={() =>
-                  setIsHovered((prev) => ({ ...prev, password: false }))
-                }
-              >
-                <div className="input-icon">
-                  <img
-                    src="./lock.png"
-                    alt="Lock"
-                    className="input-icon__img"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                      e.target.parentElement.innerHTML = "🔒";
-                    }}
-                  />
-                </div>
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  onFocus={() =>
-                    setIsHovered((prev) => ({ ...prev, password: true }))
-                  }
-                  onBlur={() =>
-                    setIsHovered((prev) => ({ ...prev, password: false }))
-                  }
-                  className="input-field"
-                />
-              </div>
-
-              {/* Error Message */}
-              {error && (
-                <div className="error-message">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.195 3 1.732 3z" />
-                  </svg>
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {/* Login Button */}
-              <button
-                type="submit"
-                className={`login-btn ${isLoading ? "btn-loading" : ""}`}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <div className="spinner"></div>
-                    <span>Authenticating...</span>
-                  </>
-                ) : (
-                  "Login"
-                )}
-              </button>
-            </form>
-
-            {/* Security Badge */}
-            <div className="security-badge">
-              <div className="security-badge__icon">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                  />
-                </svg>
-              </div>
-              <div className="security-badge__text">
-                <strong>Secure System</strong>
-                <p>Unauthorized access is monitored in real-time</p>
-              </div>
-            </div>
+          <div id="lp-logo-fallback" className="lp-logo-fallback lp-hidden">
+            <span>NUTECH</span>
           </div>
         </div>
 
-        {/* Footer */}
-        <footer className="login-footer">
-          © 2024 National University of Technology. All rights reserved.
-        </footer>
+        {/* Card title */}
+        <h2 className="lp-card-title">Login</h2>
+
+        {/* Form */}
+        <form className="lp-form" onSubmit={handleLogin}>
+
+          {/* Student / Admin ID field */}
+          <div className={`lp-field${error ? " lp-field--error" : ""}`}>
+            <span className="lp-field-icon">
+              {/* Person icon */}
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v1.2h19.2v-1.2c0-3.2-6.4-4.8-9.6-4.8z"/>
+              </svg>
+            </span>
+            <input
+              type="text"
+              className="lp-input"
+              placeholder="Student ID or Admin ID"
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              required
+              autoComplete="username"
+            />
+          </div>
+
+          {/* Password field */}
+          <div className={`lp-field${error ? " lp-field--error" : ""}`}>
+            <span className="lp-field-icon">
+              {/* Lock icon */}
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+              </svg>
+            </span>
+            <input
+              type={showPassword ? "text" : "password"}
+              className="lp-input"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              className="lp-eye-btn"
+              onClick={() => setShowPassword((v) => !v)}
+              tabIndex={-1}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? (
+                /* Eye-off */
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              ) : (
+                /* Eye */
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              )}
+            </button>
+          </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="lp-error">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.195 3 1.732 3z"/>
+              </svg>
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Submit button */}
+          <button
+            type="submit"
+            className={`lp-submit-btn${isLoading ? " lp-submit-btn--loading" : ""}`}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <span className="lp-spinner"></span>
+                Authenticating...
+              </>
+            ) : (
+              "Login"
+            )}
+          </button>
+        </form>
+
+        {/* Security note */}
+        <div className="lp-security-note">
+          <span className="lp-security-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+            </svg>
+          </span>
+          <span>This system is protected. Unauthorized access is monitored.</span>
+        </div>
       </div>
+
+      {/* Footer */}
+      <footer className="lp-footer">
+        © 2024 National University of Technology. All rights reserved.
+      </footer>
     </div>
   );
 };

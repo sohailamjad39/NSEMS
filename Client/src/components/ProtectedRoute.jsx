@@ -1,49 +1,46 @@
 /**
  * Client/src/components/ProtectedRoute.jsx
- * 
- * Protected route component for React Router
- * 
- * CRITICAL FIXES:
- * - Proper authentication checking
- * - Better error handling
- * - Console logging for debugging
+ *
+ * ProtectedRoute  — only allows logged-in users (optionally by role)
+ * AuthRoute       — redirects already-logged-in users away from /login etc.
+ *
+ * Usage in App.jsx:
+ *   <Route path="/" element={<AuthRoute><LoginPage /></AuthRoute>} />
+ *   <Route path="/admin-dashboard" element={<ProtectedRoute roles={["admin","scanner"]}><AdminDashboard /></ProtectedRoute>} />
+ *   <Route path="/student" element={<ProtectedRoute roles={["student"]}><StudentDashboard /></ProtectedRoute>} />
  */
 
-import React from 'react';
-import { Navigate } from 'react-router-dom';
-import { checkAuth, checkRole } from '../middleware/authMiddleware';
+import React from "react";
+import { Navigate } from "react-router-dom";
+import { getToken, getRole } from "../services/auth";
 
-const ProtectedRoute = ({ children, allowedRoles }) => {
-  const isAuth = checkAuth();
-  const userRole = localStorage.getItem('role') || 
-                  (localStorage.getItem('studentId') ? 'student' : null);
+/**
+ * Blocks unauthenticated (or wrong-role) users.
+ * @param {string[]} [roles]  If provided, user's role must be in this list.
+ * @param {string}   [redirectTo="/"] Where to redirect on auth failure.
+ */
+export const ProtectedRoute = ({ children, roles, redirectTo = "/" }) => {
+  const token = getToken();
+  const role  = getRole();
 
-  console.log('🔒 ProtectedRoute check:');
-  console.log('   isAuthenticated:', isAuth);
-  console.log('   userRole:', userRole);
-  console.log('   allowedRoles:', allowedRoles);
-  console.log('   hasRequiredRole:', allowedRoles.includes(userRole));
+  if (!token)                          return <Navigate to={redirectTo} replace />;
+  if (roles && !roles.includes(role))  return <Navigate to={redirectTo} replace />;
 
-  // If not authenticated, redirect to login
-  if (!isAuth) {
-    console.log('   ❌ Not authenticated - redirecting to /login');
-    return <Navigate to="/login" replace />;
-  }
-
-  // If roles are specified, check if user has allowed role
-  if (allowedRoles && !allowedRoles.includes(userRole)) {
-    console.log('   ❌ Role mismatch - redirecting to appropriate dashboard');
-    // Redirect to user's default page based on their role
-    if (userRole === 'student') {
-      return <Navigate to="/student-id" replace />;
-    } else if (userRole === 'admin' || userRole === 'scanner') {
-      return <Navigate to="/admin-dashboard" replace />;
-    }
-    return <Navigate to="/login" replace />;
-  }
-
-  console.log('   ✅ Access granted - rendering children');
   return children;
 };
 
-export default ProtectedRoute;
+/**
+ * For public-only pages (login, register).
+ * Redirects already-authenticated users to their dashboard.
+ */
+export const AuthRoute = ({ children }) => {
+  const token = getToken();
+  const role  = getRole();
+
+  if (!token) return children;
+
+  // Already logged in → redirect to relevant dashboard
+  if (role === "admin" || role === "scanner") return <Navigate to="/admin-dashboard" replace />;
+  if (role === "student")                     return <Navigate to="/student"         replace />;
+  return children;
+};

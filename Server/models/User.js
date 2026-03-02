@@ -4,7 +4,6 @@
  * Complete User model with proper role handling and student ID validation
  * 
  * Security Notes:
- * - Student ID format validation (NSE-202601)
  * - Password never exposed to clients
  * - Proper indexing for fast lookups
  * - Role-based field requirements
@@ -52,7 +51,6 @@ const UserSchema = new mongoose.Schema({
       return this.role === 'student'; 
     },
     unique: true,
-    match: [/^[A-Z]{3}-\d{6}$/, 'Invalid student ID format (e.g., NSE-202601)'],
     trim: true,
     uppercase: true
   },
@@ -61,6 +59,12 @@ const UserSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
+    trim: true
+  },
+
+  // Image link hosted on internet
+  imageLink: {
+    type: String,
     trim: true
   },
   

@@ -1,20 +1,18 @@
 /**
  * NSEMS/Server/models/Student.js
- * 
- * Student schema for digital ID card data
- * 
- * Security: 
- *   - Secret key never exposed to UI
- *   - Time-bound tokens prevent screenshot reuse
- *   - CRDT-ready for offline sync
- * 
- * Relationships:
- *   - 1:1 with User (via userId)
- *   - 1:N with ScanLog (as scanned student)
+ *
+ * FIX: Removed the hardcoded `match` validator on studentId:
+ *   match: [/^[A-Z]{3}-\d{6}$/, 'Invalid student ID format (e.g., NSE-202601)']
+ *
+ * This was the root cause — Mongoose validates the document BEFORE .save(),
+ * so no controller or frontend change could fix it. The model is the final gate.
+ *
+ * Also fixed: generateToken() used require('crypto') inside an ES module file.
+ * crypto is now imported at the top level.
  */
-// const mongoose = require('mongoose');
 
 import mongoose from 'mongoose';
+import crypto   from 'crypto';
 
 const StudentSchema = new mongoose.Schema({
   // Core identity (links to User)
@@ -24,19 +22,30 @@ const StudentSchema = new mongoose.Schema({
     required: [true, 'User ID is required'],
     unique: true
   },
-  
+
   // ID card data
   name: {
     type: String,
     required: [true, 'Student name is required'],
     trim: true
   },
+
   studentId: {
     type: String,
     required: [true, 'Student ID is required'],
     unique: true,
-    match: [/^[A-Z]{3}-\d{6}$/, 'Invalid student ID format (e.g., NSE-202601)']
+    trim: true,
+    uppercase: true,
+    // FIXED: was match: [/^[A-Z]{3}-\d{6}$/, '...'] — strict NSE-202601 only.
+    // Replaced with a permissive validator: letters, numbers, hyphens, underscores.
+    validate: {
+      validator: function(v) {
+        return v && /^[A-Z0-9\-_]+$/i.test(v);
+      },
+      message: 'Student ID can only contain letters, numbers, hyphens, or underscores'
+    }
   },
+
   academicDetails: {
     program: {
       type: String,
@@ -57,7 +66,7 @@ const StudentSchema = new mongoose.Schema({
       default: 'active'
     }
   },
-  
+
   // Crypto fields (critical for security)
   secretKey: {
     type: String,
@@ -68,7 +77,7 @@ const StudentSchema = new mongoose.Schema({
     type: Number,
     default: 60_000 // 60 seconds (ms)
   },
-  
+
   // Offline-first sync
   lastSync: {
     type: Date,
@@ -79,7 +88,7 @@ const StudentSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  
+
   // Audit trail
   createdAt: {
     type: Date,
@@ -89,9 +98,9 @@ const StudentSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
-}, { 
+}, {
   timestamps: true,
-  toJSON: { virtuals: true },
+  toJSON:   { virtuals: true },
   toObject: { virtuals: true }
 });
 
@@ -106,9 +115,8 @@ StudentSchema.virtual('currentToken').get(function() {
   return this.generateToken(window);
 });
 
-// Token generation method
+// Token generation — FIXED: use top-level import, not require() (ES module file)
 StudentSchema.methods.generateToken = function(timeWindow) {
-  const crypto = require('crypto');
   return crypto
     .createHmac('sha256', this.secretKey)
     .update(String(timeWindow))

@@ -1,48 +1,17 @@
-/**
- * NSEMS/Server/routes/scannerRoutes.js
- * 
- * Scanner routes for QR code validation and scan logging
- * 
- * Features:
- * - QR validation endpoint
- * - Scan log management
- * - Offline-first sync support
- * 
- * Security Notes:
- * - Time-window validation prevents replay attacks
- * - Scan logs are stored for audit purposes
- * - Proper rate limiting should be added in production
- */
-
+// Server/routes/scannerRoutes.js
 import express from 'express';
-import { validateQR } from '../controllers/scannerController.js';
+import { validateQR, getScanLogs, syncLogs } from '../controllers/scannerController.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-/**
- * POST /api/scanner/validate
- * 
- * Validate QR code scanned by admin/scanner
- * 
- * Request Body:
- *   - qrData: QR code content (format: "studentId|timeWindow|token")
- *   - scannerId: ID of the scanner/admin performing validation
- * 
- * Response:
- *   - success: boolean
- *   - valid: boolean (true if QR is valid)
- *   - student: Student information (if valid)
- *   - message: Validation message
- *   - timestamp: Validation timestamp
- * 
- * Validation Flow:
- *   1. Parse QR data
- *   2. Validate time window (60-second rotation)
- *   3. Verify cryptographic token
- *   4. Retrieve student information
- *   5. Log scan attempt
- *   6. Return validation result
- */
+// POST /api/scanner/validate  — validate a QR code (no auth needed so scanner device can call it)
 router.post('/validate', validateQR);
+
+// GET /api/scanner/logs  — get scan logs (admin/scanner only)
+router.get('/logs', authMiddleware, getScanLogs);
+
+// POST /api/scanner/sync-logs  — sync offline logs to DB
+router.post('/sync-logs', syncLogs);
 
 export default router;

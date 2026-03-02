@@ -1,195 +1,248 @@
 /**
  * NSEMS/Server/controllers/studentController.js
- * 
- * Student registration controller with automatic secret key generation
- * 
- * Features:
- * - Secure student registration by admin only
- * - Automatic secret key generation using crypto
- * - Proper User-Student relationship linking
- * - Input validation and error handling
- * - Password hashing for security
+ *
+ * Fixes applied vs your original:
+ *
+ *  BUG 1 — getAllStudentsDetails (caused the 500):
+ *    $unwind had `preserveNullAndEmpty: true` which is NOT a valid MongoDB option.
+ *    The correct option is `preserveNullAndEmptyArrays: true`.
+ *    MongoDB silently ignores unknown $unwind options and then crashes on the
+ *    subsequent $project because $user fields are undefined.
+ *    ALSO: the $project referenced flat fields ($program, $department, etc.)
+ *    but the schema stores them nested under academicDetails — fixed to
+ *    $academicDetails.program etc.
+ *
+ *  BUG 2 — updateStudent / deleteStudent:
+ *    Both used `const User = require("../models/User")` inside an ES module
+ *    file (import/export syntax). require() is not available in ES modules and
+ *    throws "require is not defined". Fixed by using the User already imported
+ *    at the top of the file.
+ *    ALSO: updateStudent wrote to flat Student fields (student.program = ...)
+ *    but the schema uses academicDetails.program — those assignments were
+ *    silently ignored and nothing ever saved. Fixed to $set academicDetails.*.
  */
 
 import crypto from 'crypto';
-import User from '../models/User.js';
+import User    from '../models/User.js';
 import Student from '../models/Student.js';
 
-/**
- * Register a new student (admin only)
- * 
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- * 
- * Request Body:
- *   - email: Student email
- *   - phone: Student phone number
- *   - password: Student password
- *   - name: Student full name
- *   - studentId: Student ID (format: XXX-XXXXXX)
- *   - program: Academic program
- *   - department: Department name
- *   - year: Academic year
- * 
- * Response:
- *   - success: boolean
- *   - message: Success or error message
- *   - studentId: Created student ID
- */
+// ─── REGISTER ────────────────────────────────────────────────────────────────
 export const registerStudent = async (req, res) => {
   try {
-    const {
-      email,
-      phone,
-      password,
-      name,
-      studentId,
-      program,
-      department,
-      year
-    } = req.body;
+    const { email, phone, password, name, studentId, program, department, year } = req.body;
 
-    // Input validation
     if (!email || !phone || !password || !name || !studentId || !program || !department || !year) {
-      return res.status(400).json({
-        success: false,
-        message: 'All fields are required'
-      });
+      return res.status(400).json({ success: false, message: 'All fields are required' });
     }
 
-    // Validate student ID format
-    const studentIdRegex = /^[A-Z]{3}-\d{6}$/;
-    if (!studentIdRegex.test(studentId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid student ID format (e.g., NSE-202601)'
-      });
+    // Allow any alphanumeric student ID — no strict format enforced
+    const cleanStudentId = studentId.trim().toUpperCase();
+    if (!/^[A-Z0-9\-_]+$/i.test(cleanStudentId)) {
+      return res.status(400).json({ success: false, message: 'Student ID can only contain letters, numbers, hyphens, or underscores' });
     }
 
-    // Validate year
     const yearNum = parseInt(year, 10);
     if (isNaN(yearNum) || yearNum < 1 || yearNum > 10) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid academic year (1-10)'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid academic year (1-10)' });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { phone }, { studentId }]
-    });
-
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }, { studentId }] });
     if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: 'User already exists with this email, phone, or student ID'
-      });
+      return res.status(409).json({ success: false, message: 'User already exists with this email, phone, or student ID' });
     }
 
-
-    // Generate secure secret key for QR code generation
     const secretKey = crypto.randomBytes(32).toString('hex');
+    const user      = await User.create({ email, phone, password, role: 'student', studentId: cleanStudentId, name });
 
-    // Create user record
-    const user = await User.create({
-      email,
-      phone,
-      password,
-      role: 'student',
-      studentId,
-      name
-    });
-
-    // Create student record with secret key
     const student = await Student.create({
-      userId: user._id,
+      userId:          user._id,
       name,
-      studentId,
-      academicDetails: {
-        program,
-        department,
-        year: yearNum,
-        status: 'active'
-      },
+      studentId: cleanStudentId,
+      academicDetails: { program, department, year: yearNum, status: 'active' },
       secretKey,
-      tokenRotation: 60000
+      tokenRotation:   60000,
     });
 
-    console.log(`✅ Student registered successfully: ${studentId}`);
-    console.log(`🔑 Secret key generated for: ${studentId}`);
-
-    res.status(201).json({
-      success: true,
-      message: 'Student registered successfully',
-      studentId: student.studentId
+    console.log(`✅ Student registered: ${studentId}`);
+    return res.status(201).json({
+      success:   true,
+      message:   'Student registered successfully',
+      studentId: student.studentId,
     });
 
   } catch (error) {
-    console.error('Student registration error:', error);
-    
-    // Handle duplicate key errors
+    console.error('registerStudent error:', error);
     if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'Duplicate email, phone, or student ID'
-      });
+      return res.status(409).json({ success: false, message: 'Duplicate email, phone, or student ID' });
     }
-
-    res.status(500).json({
-      success: false,
-      message: 'Server error during student registration'
-    });
+    return res.status(500).json({ success: false, message: 'Server error during student registration' });
   }
 };
 
-/**
- * Get all students (admin only)
- * 
- * @param {Object} req - Request object
- * @param {Object} res - Response object
- */
+// ─── GET ALL STUDENTS (basic list) ───────────────────────────────────────────
 export const getAllStudents = async (req, res) => {
   try {
     const students = await Student.find()
       .select('name studentId academicDetails')
       .sort({ createdAt: -1 });
 
-    res.json({
-      success: true,
-      students
-    });
+    return res.json({ success: true, students });
   } catch (error) {
-    console.error('Get students error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching students'
-    });
+    console.error('getAllStudents error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while fetching students' });
   }
 };
 
+// ─── SYNC ALL STUDENTS (offline cache for scanner) ────────────────────────────
 export const syncAllStudents = async (req, res) => {
   try {
     const students = await Student.find()
-      .select('studentId name academicDetails secretKey')
-      .lean(); // Use lean() for better performance
+      .select('studentId name academicDetails secretKey userId')
+      .lean();
 
-    const formattedStudents = students.map(student => ({
-      studentId: student.studentId,
-      name: student.name,
-      secretKey: student.secretKey,
-      program: student.academicDetails.program,
-      department: student.academicDetails.department,
-      year: student.academicDetails.year,
-      status: student.academicDetails.status
+    const studentIds = students.map(s => s.studentId);
+    const users = await User.find({ studentId: { $in: studentIds } })
+      .select('studentId imageLink')
+      .lean();
+
+    const userImageMap = {};
+    users.forEach(u => { userImageMap[u.studentId] = u.imageLink || ''; });
+
+    const formatted = students.map(s => ({
+      studentId:  s.studentId,
+      name:       s.name,
+      secretKey:  s.secretKey,
+      program:    s.academicDetails?.program    || '',
+      department: s.academicDetails?.department || '',
+      year:       s.academicDetails?.year       ?? '',
+      status:     s.academicDetails?.status     || 'active',
+      imageLink:  userImageMap[s.studentId]     || '',
     }));
 
-    res.json(formattedStudents);
+    return res.json(formatted);
   } catch (error) {
-    console.error('Sync all students error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while syncing students'
-    });
+    console.error('syncAllStudents error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while syncing students' });
+  }
+};
+
+// ─── STUDENT STATS ────────────────────────────────────────────────────────────
+export const getStudentStats = async (req, res) => {
+  try {
+    const totalStudents = await User.countDocuments({ role: 'student' });
+    const totalAdmins   = await User.countDocuments({ role: { $in: ['admin', 'scanner'] } });
+
+    return res.json({ success: true, totalStudents, totalAdmins });
+  } catch (error) {
+    console.error('getStudentStats error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ─── GET ALL STUDENTS WITH FULL DETAILS (admin page) ─────────────────────────
+export const getAllStudentsDetails = async (req, res) => {
+  try {
+    const students = await Student.aggregate([
+      {
+        $lookup: {
+          from:         'users',   // MongoDB collection name (lowercase, plural)
+          localField:   'userId',
+          foreignField: '_id',
+          as:           'user',
+        },
+      },
+      {
+        $unwind: {
+          path:                       '$user',
+          preserveNullAndEmptyArrays: true,   // ← FIXED (was: preserveNullAndEmpty — invalid)
+        },
+      },
+      {
+        $project: {
+          _id:       0,
+          studentId: 1,
+          name:      1,
+          // ↓ FIXED: schema uses academicDetails.* not flat top-level fields
+          program:    '$academicDetails.program',
+          department: '$academicDetails.department',
+          year:       '$academicDetails.year',
+          status:     '$academicDetails.status',
+          // from the joined user document
+          email:     '$user.email',
+          phone:     '$user.phone',
+          imageLink: { $ifNull: ['$user.imageLink', ''] },
+        },
+      },
+      { $sort: { name: 1 } },
+    ]);
+
+    return res.json({ success: true, students });
+  } catch (err) {
+    console.error('getAllStudentsDetails error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── UPDATE STUDENT ───────────────────────────────────────────────────────────
+export const updateStudent = async (req, res) => {
+  try {
+    const { studentId }                                              = req.params;
+    const { name, email, phone, program, department, year, status, imageLink } = req.body;
+
+    const student = await Student.findOne({ studentId });
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Build $set for the Student document.
+    // FIXED: write to academicDetails.* (nested) not flat fields — the schema
+    // stores program/department/year/status inside the academicDetails subdoc.
+    const studentSet = {};
+    if (name       !== undefined) studentSet.name                          = name;
+    if (program    !== undefined) studentSet['academicDetails.program']    = program;
+    if (department !== undefined) studentSet['academicDetails.department'] = department;
+    if (year       !== undefined) studentSet['academicDetails.year']       = Number(year);
+    if (status     !== undefined) studentSet['academicDetails.status']     = status;
+
+    if (Object.keys(studentSet).length > 0) {
+      await Student.findOneAndUpdate({ studentId }, { $set: studentSet });
+    }
+
+    // Build $set for the User document (email, phone, imageLink, name).
+    // FIXED: use the imported User — NOT require() (invalid in ES modules)
+    const userSet = {};
+    if (name      !== undefined) userSet.name      = name;
+    if (email     !== undefined) userSet.email     = email;
+    if (phone     !== undefined) userSet.phone     = phone;
+    if (imageLink !== undefined) userSet.imageLink = imageLink;
+
+    if (Object.keys(userSet).length > 0) {
+      await User.findByIdAndUpdate(student.userId, { $set: userSet });
+    }
+
+    return res.json({ success: true, message: 'Student updated successfully' });
+  } catch (err) {
+    console.error('updateStudent error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── DELETE STUDENT ───────────────────────────────────────────────────────────
+export const deleteStudent = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    const student = await Student.findOneAndDelete({ studentId });
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // FIXED: use the imported User — NOT require() (invalid in ES modules)
+    await User.findByIdAndDelete(student.userId);
+
+    return res.json({ success: true, message: 'Student deleted successfully' });
+  } catch (err) {
+    console.error('deleteStudent error:', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

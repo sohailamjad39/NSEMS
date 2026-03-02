@@ -26,6 +26,7 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import authRoutes from './routes/authRoutes.js';
 import scannerRoutes from './routes/scannerRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import studentRoutes from './routes/studentRoutes.js';
 import os from 'os';
@@ -88,6 +89,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/scanner', scannerRoutes);
 app.use('/api/students', studentRoutes);
+app.use("/api/admins", adminRoutes);
 
 /**
  * Health Check Endpoint

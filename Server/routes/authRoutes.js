@@ -15,7 +15,8 @@
  */
 
 import express from 'express';
-import { login } from '../controllers/authController.js';
+import { login, changePassword } from '../controllers/authController.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -43,5 +44,6 @@ const router = express.Router();
  *   5. Returns token and user details
  */
 router.post('/login', login);
+router.post("/change-password", authMiddleware, changePassword);
 
 export default router;
